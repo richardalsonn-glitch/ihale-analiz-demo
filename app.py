@@ -1,4 +1,7 @@
 import streamlit as st
+from pypdf import PdfReader
+from docx import Document
+import re
 import json
 
 # Sayfa ayarları
