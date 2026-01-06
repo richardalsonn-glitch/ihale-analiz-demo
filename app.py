@@ -1,4 +1,5 @@
 import streamlit as st
+import json
 
 # Sayfa ayarları
 st.set_page_config(
@@ -7,7 +8,11 @@ st.set_page_config(
     layout="wide"
 )
 
-# HEADER
+# ===== CİHAZ KATALOĞUNU OKU =====
+with open("devices.json", "r", encoding="utf-8") as f:
+    devices = json.load(f)
+
+# ===== HEADER =====
 st.markdown("""
 # 🧬 İhaleBind
 ### Şartnameyi okusun, kararı siz verin
@@ -15,64 +20,64 @@ st.markdown("""
 
 st.divider()
 
-# SIDEBAR
+# ===== ÜST BAR: MARKA / MODEL =====
+col_brand, col_model = st.columns(2)
+
+with col_brand:
+    marka = st.selectbox(
+        "Cihaz Markası",
+        list(devices.keys())
+    )
+
+with col_model:
+    model = st.selectbox(
+        "Cihaz Modeli",
+        list(devices[marka].keys())
+    )
+
+selected_device = devices[marka][model]
+
+st.info(f"Seçilen Cihaz: **{marka} {model}**")
+
+# ===== SOL MENÜ: İHALE TÜRLERİ =====
 with st.sidebar:
-    st.header("📄 Şartname Yükle")
-    file = st.file_uploader(
-        "PDF veya Word yükleyin",
-        type=["pdf", "docx"]
-    )
+    st.header("📂 İhale Türleri")
 
-    st.divider()
+    for ihale in [
+        "Koagülasyon İhalesi",
+        "Biyokimya İhalesi",
+        "Hormon İhalesi",
+        "Kan Gazı İhalesi",
+        "İdrar İhalesi",
+        "Hemogram İhalesi"
+    ]:
+        destek = ihale.replace(" İhalesi", "") in selected_device.get("ihale_turleri", [])
 
-    st.header("🧪 Cihaz Seçimi")
+        if destek:
+            st.success(ihale)
+        else:
+            st.caption(f"❌ {ihale}")
 
-    cihaz_A = st.selectbox(
-        "A Grubu (Tam otomatik)",
-        ["Succeeder SF-8300"]
-    )
+# ===== ANA ALAN =====
+st.subheader("📄 Teknik Şartname")
 
-    cihaz_B = st.selectbox(
-        "B Grubu (Yarı otomatik)",
-        ["Succeeder SF-400"]
-    )
+file = st.file_uploader(
+    "PDF veya Word yükleyin",
+    type=["pdf", "docx"]
+)
 
-# ANA ALAN
-if file is None:
-    st.info("👈 Başlamak için sol menüden şartname yükleyin.")
-else:
-    st.success(f"✅ Yüklenen dosya: {file.name}")
+if file:
+    st.success(f"Yüklenen dosya: {file.name}")
 
-    col1, col2 = st.columns(2)
+    st.subheader("🔍 Cihaz Özeti")
 
-    with col1:
-        st.subheader("📊 İhale Özeti (Demo)")
-        st.metric("Toplam Test", "283.000")
-        st.metric("Süre", "24 Ay")
+    if "koagulasyon" in selected_device:
+        koag = selected_device["koagulasyon"]
 
-    with col2:
-        st.subheader("📌 Cihaz Bilgisi")
-        st.write("**A Grubu:**", cihaz_A)
-        st.write("**B Grubu:**", cihaz_B)
+        st.write("**Toplam Kanal:**", koag.get("kanal_toplam"))
+        st.write("**Prob Sayısı:**", koag.get("prob_sayisi"))
+        st.write("**Kapak Delme:**", "Var" if koag.get("kapak_delme") else "Yok")
+        st.write("**Barkod Okuma:**", "Var" if koag.get("barkod_okuma") else "Yok")
 
-    st.divider()
-
-    st.subheader("🔍 Uygunluk Analizi (Demo Veri)")
-
-    st.table({
-        "Şartname Maddesi": [
-            "Kanal ≥ 4",
-            "Prob ≥ 2",
-            "Barkod Okuma"
-        ],
-        "Cihaz Özelliği": [
-            "4",
-            "1",
-            "Var"
-        ],
-        "Durum": [
-            "✅ Uygun",
-            "❌ Uygun Değil",
-            "✅ Uygun"
-        ]
-    })
+        st.subheader("🧪 Çalışılabilen Testler")
+        st.json(koag.get("testler"))
