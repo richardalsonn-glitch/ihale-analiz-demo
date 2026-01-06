@@ -8,6 +8,63 @@ import json
 # Dosyadan metin çıkarma
 # -----------------------------
 def extract_text_from_pdf(uploaded_file) -> str:
+    def extract_test_block(t: str) -> str:
+    # Test listesi başlıkları
+    headers = [
+        "istenen test", "istenilen test", "calisilacak test", "calisilacak tetkik",
+        "test listesi", "testler", "koagulasyon test", "calisilacak parametre"
+    ]
+    for h in headers:
+        idx = t.find(h)
+        if idx != -1:
+            # başlıktan sonrası: 1200 karakter al (V1)
+            start = idx
+            end = min(len(t), idx + 1200)
+            return t[start:end]
+    return ""
+
+def extract_rules_from_text(raw_text: str) -> dict:
+    t = normalize_tr(raw_text)
+    rules = {}
+
+    # ... (mevcut kanal/prob/barkod/metod kodların)
+
+    # --- Test listesi bloğunu yakala
+    test_block = extract_test_block(t)
+    if test_block:
+        rules["test_listesi_blok"] = test_block[:400]  # ekranda çok uzamasın diye kısaltılmış
+
+    # --- Test isimleri (PT / APTT / Fibrinojen / D-Dimer) + Faktör
+    tests = {}
+
+    # Önce test bloğunda ara; yoksa tüm metinde ara
+    scan_text = test_block if test_block else t
+
+    if " pt " in f" {scan_text} " or "protrombin" in scan_text:
+        tests["PT"] = True
+    if "aptt" in scan_text:
+        tests["APTT"] = True
+    if "fibrinojen" in scan_text:
+        tests["Fibrinojen"] = True
+    if any(k in scan_text for k in ["d-dimer", "d dimer", "ddimer"]):
+        tests["D-Dimer"] = True
+
+    # Faktör taraması (factor viii, ix, xiii, faktor, faktör)
+    faktor_hit = any(k in scan_text for k in ["faktor", "faktör", "factor"])
+    if faktor_hit:
+        tests["Faktör"] = True
+
+        # “dış lab” yakalayıcı
+        dis_lab = any(k in scan_text for k in [
+            "dis lab", "dis laboratuvar", "referans lab", "gonderilebilir", "baska laboratuvar", "hizmet alimi"
+        ])
+        rules["faktor_testi"] = "opsiyonel_dis_lab" if dis_lab else "zorunlu"
+
+    if tests:
+        rules["istenen_testler"] = tests
+
+    return rules
+
     reader = PdfReader(uploaded_file)
     parts = []
     for page in reader.pages:
