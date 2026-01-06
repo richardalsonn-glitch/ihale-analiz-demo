@@ -155,7 +155,11 @@ with st.sidebar:
 st.subheader("📄 Teknik Şartname")
 
 file = st.file_uploader(
-    if file:
+    "PDF veya Word yükleyin",
+    type=["pdf", "docx"]
+)
+
+if file:
     # metin çıkar
     if file.name.lower().endswith(".pdf"):
         text = extract_text_from_pdf(file)
@@ -173,11 +177,8 @@ file = st.file_uploader(
 
         st.subheader("🧠 Şartnameden Yakalanan Kurallar (V1)")
         st.json(rules)
-    "PDF veya Word yükleyin",
-    type=["pdf", "docx"]
-)
 
-if file:
+    # Aşağıdaki mevcut özet kısmın kalsın
     st.success(f"Yüklenen dosya: {file.name}")
 
     st.subheader("🔍 Cihaz Özeti")
