@@ -1,0 +1,40 @@
+add device catalog base
+{
+  "Succeeder": {
+    "SF-8300": {
+      "ihale_turleri": ["Koagülasyon"],
+      "koagulasyon": {
+        "kanal_toplam": 8,
+        "kanal_optik": 4,
+        "kanal_manyetik": 4,
+        "prob_sayisi": 3,
+        "kapak_delme": true,
+        "barkod_okuma": true,
+        "inkubasyon_sayisi": 20,
+        "sesli_uyari": true,
+        "gorsel_uyari": true,
+        "testler": {
+          "PT": "manyetik",
+          "APTT": "manyetik",
+          "Fibrinojen": "manyetik",
+          "D-Dimer": "optik",
+          "Faktor": false
+        }
+      }
+    },
+    "SF-400": {
+      "ihale_turleri": ["Koagülasyon"],
+      "koagulasyon": {
+        "kanal_toplam": 2,
+        "yarı_otomatik": true,
+        "inkubator": true,
+        "testler": {
+          "PT": true,
+          "APTT": true,
+          "Fibrinojen": false,
+          "D-Dimer": false
+        }
+      }
+    }
+  }
+}
