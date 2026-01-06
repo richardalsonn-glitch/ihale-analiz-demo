@@ -8,8 +8,11 @@ import json
 # Dosyadan metin çıkarma
 # -----------------------------
 def extract_text_from_pdf(uploaded_file) -> str:
-    def extract_test_block(t: str) -> str:
-    # Test listesi başlıkları
+
+# -----------------------------
+# Test listesi bloğunu yakala
+# -----------------------------
+def extract_test_block(t: str) -> str:
     headers = [
         "istenen test", "istenilen test", "calisilacak test", "calisilacak tetkik",
         "test listesi", "testler", "koagulasyon test", "calisilacak parametre"
@@ -17,28 +20,85 @@ def extract_text_from_pdf(uploaded_file) -> str:
     for h in headers:
         idx = t.find(h)
         if idx != -1:
-            # başlıktan sonrası: 1200 karakter al (V1)
-            start = idx
-            end = min(len(t), idx + 1200)
-            return t[start:end]
+            end = min(len(t), idx + 1200)  # V1: başlıktan sonra 1200 karakter
+            return t[idx:end]
     return ""
 
+
+# -----------------------------
+# Metin normalize
+# -----------------------------
+def normalize_tr(text: str) -> str:
+    text = text.lower()
+    text = (text.replace("ı", "i")
+            .replace("İ", "i")
+            .replace("ş", "s")
+            .replace("ğ", "g")
+            .replace("ü", "u")
+            .replace("ö", "o")
+            .replace("ç", "c"))
+    text = re.sub(r"\s+", " ", text)
+    return text
+
+
+# -----------------------------
+# Kural çıkar (tek fonksiyon olacak!)
+# -----------------------------
 def extract_rules_from_text(raw_text: str) -> dict:
     t = normalize_tr(raw_text)
     rules = {}
 
-    # ... (mevcut kanal/prob/barkod/metod kodların)
+    # --- Kanal sayısı
+    kanal_patterns = [
+        r"en az\s*(\d+)\s*(adet\s*)?(olcum|test|reaksiyon)?\s*kanal",
+        r"(\d+)\s*(adet\s*)?(olcum|test|reaksiyon)\s*kanali",
+        r"en az\s*(\d+)\s*kanal"
+    ]
+    kanal_vals = []
+    for pat in kanal_patterns:
+        m = re.search(pat, t)
+        if m:
+            kanal_vals.append(int(m.group(1)))
+    if kanal_vals:
+        rules["kanal_toplam_min"] = max(kanal_vals)
 
-    # --- Test listesi bloğunu yakala
+    # --- Prob sayısı
+    prob_patterns = [
+        r"en az\s*(\d+)\s*\(?[a-z]*\)?\s*prob",
+        r"(\d+)\s*problu"
+    ]
+    prob_vals = []
+    for pat in prob_patterns:
+        m = re.search(pat, t)
+        if m:
+            prob_vals.append(int(m.group(1)))
+    if prob_vals:
+        rules["prob_sayisi_min"] = max(prob_vals)
+
+    # --- Barkod
+    if "barkod" in t:
+        rules["barkod_okuma_gerekli"] = True
+
+    # --- Okuma yöntemi
+    method_hits = set()
+    if any(k in t for k in ["manyetik", "manyetik prensip"]):
+        method_hits.add("manyetik")
+    if any(k in t for k in ["mekanik", "clot", "clotting", "clot detection", "pihti olusumu", "pihti"]):
+        method_hits.add("mekanik_clot")
+    if "koagulometri" in t:
+        method_hits.add("mekanik_clot")
+    if method_hits:
+        rules["okuma_yontemi"] = sorted(method_hits)
+
+    # --- Test listesi bloğu
     test_block = extract_test_block(t)
     if test_block:
-        rules["test_listesi_blok"] = test_block[:400]  # ekranda çok uzamasın diye kısaltılmış
+        rules["test_listesi_blok"] = test_block[:400]  # ekranda kısa göster
 
-    # --- Test isimleri (PT / APTT / Fibrinojen / D-Dimer) + Faktör
-    tests = {}
-
-    # Önce test bloğunda ara; yoksa tüm metinde ara
     scan_text = test_block if test_block else t
+
+    # --- Testler + Faktör
+    tests = {}
 
     if " pt " in f" {scan_text} " or "protrombin" in scan_text:
         tests["PT"] = True
@@ -49,14 +109,13 @@ def extract_rules_from_text(raw_text: str) -> dict:
     if any(k in scan_text for k in ["d-dimer", "d dimer", "ddimer"]):
         tests["D-Dimer"] = True
 
-    # Faktör taraması (factor viii, ix, xiii, faktor, faktör)
     faktor_hit = any(k in scan_text for k in ["faktor", "faktör", "factor"])
     if faktor_hit:
         tests["Faktör"] = True
 
-        # “dış lab” yakalayıcı
         dis_lab = any(k in scan_text for k in [
-            "dis lab", "dis laboratuvar", "referans lab", "gonderilebilir", "baska laboratuvar", "hizmet alimi"
+            "dis lab", "dis laboratuvar", "referans lab", "gonderilebilir",
+            "baska laboratuvar", "hizmet alimi"
         ])
         rules["faktor_testi"] = "opsiyonel_dis_lab" if dis_lab else "zorunlu"
 
@@ -64,6 +123,7 @@ def extract_rules_from_text(raw_text: str) -> dict:
         rules["istenen_testler"] = tests
 
     return rules
+
 
     reader = PdfReader(uploaded_file)
     parts = []
