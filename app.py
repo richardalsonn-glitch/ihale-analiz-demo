@@ -1,9 +1,9 @@
 import streamlit as st
 import json
 import re
-from typing import Dict, Any, Tuple, List
 from pypdf import PdfReader
 from docx import Document
+from typing import Dict, Any
 
 # ======================================================
 # CONFIG
@@ -37,71 +37,54 @@ def normalize(text: str) -> str:
     text = text.lower()
     for a, b in [("ı","i"), ("ş","s"), ("ğ","g"), ("ü","u"), ("ö","o"), ("ç","c")]:
         text = text.replace(a, b)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
+    return re.sub(r"\s+", " ", text).strip()
 
 # ======================================================
-# REQUIREMENT EXTRACTION (V1)
+# RULE EXTRACTION
 # ======================================================
 def extract_rules_from_text(raw: str) -> Dict[str, Any]:
     t = normalize(raw)
     rules: Dict[str, Any] = {}
 
-    # --- Kanal (en az X kanal)
-    kanal_vals = re.findall(r"en az\s*(\d+)\s*(adet\s*)?(olcum|test|reaksiyon)?\s*kanal", t)
-    if kanal_vals:
-        nums = [int(x[0]) for x in kanal_vals]
-        rules["kanal_min"] = max(nums)
+    # Kanal
+    kanal = re.findall(r"en az\s*(\d+)\s*kanal", t)
+    if kanal:
+        rules["kanal_min"] = max(map(int, kanal))
 
-    # --- Prob
-    prob_vals = re.findall(r"en az\s*(\d+)\s*\(?[a-z]*\)?\s*prob", t)
-    if prob_vals:
-        rules["prob_min"] = max(int(x) for x in prob_vals)
+    # Prob
+    prob = re.findall(r"en az\s*(\d+)\s*prob", t)
+    if prob:
+        rules["prob_min"] = max(map(int, prob))
 
-    # --- Kapak delme
-    if any(k in t for k in ["kapak delme", "piercing", "cap piercing"]):
+    # Kapak delme
+    if "kapak delme" in t or "piercing" in t:
         rules["kapak_delme"] = True
 
-    # --- Barkod (numune/reaktif)
-    barkod: Dict[str, bool] = {}
-    if any(k in t for k in ["numune barkod", "hasta barkod", "tup barkod", "sample barcode", "patient barcode"]):
+    # Barkod
+    barkod = {}
+    if any(k in t for k in ["numune barkod", "hasta barkod", "tup barkod"]):
         barkod["numune"] = True
-    if any(k in t for k in ["reaktif barkod", "kit barkod", "reagent barcode", "reagent bar code"]):
+    if any(k in t for k in ["reaktif barkod", "kit barkod"]):
         barkod["reaktif"] = True
-    # Bazı şartnameler sadece "barkod okuyucu" yazar; bunu genel bilgi olarak saklayalım:
-    if "barkod" in t and not barkod:
-        barkod["genel"] = True
     if barkod:
         rules["barkod"] = barkod
 
-    # --- Okuma yöntemi (clot/koagülometri)
-    # Şartnamede "koagulometri" / "clotting" / "clot detection" / "pıhtı" geçiyorsa clot temelli kabul ediyoruz.
-    if any(k in t for k in ["koagulometri", "clotting", "clot detection", "clot", "pihti", "pıhtı"]):
+    # Okuma yöntemi (clot)
+    if any(k in t for k in ["koagulometri", "clot", "clotting", "pıhtı"]):
         rules["okuma"] = "clot_detection"
-    # Ek: kromojenik / immünolojik istenebilir (şimdilik bilgi amaçlı yakala)
-    if any(k in t for k in ["kromojenik", "chromogenic"]):
-        rules["kromojenik"] = True
-    if any(k in t for k in ["immunolojik", "immünolojik", "immunoassay"]):
-        rules["immunolojik"] = True
 
-    # --- Testler (PT / APTT / Fibrinojen / D-Dimer / Faktör)
-    tests: Dict[str, bool] = {}
-    if re.search(r"\bpt\b|protrombin zamani", t):
+    # Testler
+    tests = {}
+    if re.search(r"\bpt\b|protrombin", t):
         tests["PT"] = True
-    # aPTT yazım varyasyonları
-    if re.search(r"\ba\s*\.?\s*p\s*\.?\s*t\s*\.?\s*t\b|\baptt\b", t):
+    if re.search(r"\baptt\b|a\s*p\s*t\s*t", t):
         tests["APTT"] = True
     if "fibrinojen" in t:
         tests["Fibrinojen"] = True
-    if re.search(r"d\s*[-]?\s*dimer|\bddimer\b", t):
+    if re.search(r"d[- ]?dimer|ddimer", t):
         tests["D-Dimer"] = True
     if re.search(r"faktor|faktör|factor", t):
         tests["Faktor"] = True
-        # Dış lab opsiyonu (şimdilik bilgi)
-        if any(k in t for k in ["dis lab", "dis laboratuvar", "referans lab", "gonderilebilir", "hizmet alimi", "hizmet alımı"]):
-            rules["faktor_durumu"] = "opsiyonel_dis_lab"
-        else:
-            rules["faktor_durumu"] = "zorunlu"
 
     if tests:
         rules["testler"] = tests
@@ -109,137 +92,124 @@ def extract_rules_from_text(raw: str) -> Dict[str, Any]:
     return rules
 
 # ======================================================
-# HELPERS
+# EVALUATION HELPERS
 # ======================================================
-def bool_to_tr(x: Any) -> str:
-    return "Var" if bool(x) else "Yok"
+def missing():
+    return "Bilgi Yok", "Şartnamede bulunamadı, lütfen manuel kontrol ediniz."
 
-def get_device_coag_block(model_block: Dict[str, Any]) -> Dict[str, Any]:
-    # İleride biyokimya vs eklenince benzer bloklar da olur.
-    return model_block.get("koagulasyon", {})
+def evaluate_barkod(req, dev):
+    if not req:
+        return missing()
+    if req.get("numune") and not dev.get("numune"):
+        return "Uygun Değil", "Numune barkod okuyucu yok."
+    if req.get("reaktif") and not dev.get("reaktif"):
+        return "Zeyil", "Reaktif barkod yok (zeyil önerilir)."
+    return "Uygun", "Barkod gereksinimleri karşılanıyor."
 
-def safe_compare_missing() -> Tuple[str, str]:
-    return ("Bilgi Yok", "Şartnamede bu madde bulunamadı, lütfen manuel kontrol ediniz.")
-
-def compare_numeric_min(rule_key: str, rule_label: str, device_val: Any, rules: Dict[str, Any]) -> Tuple[str, str]:
-    if rule_key not in rules:
-        return safe_compare_missing()
-    try:
-        needed = int(rules[rule_key])
-        dv = int(device_val) if device_val is not None else None
-    except Exception:
-        return ("Bilgi Yok", "Değer okunamadı, lütfen manuel kontrol ediniz.")
-    if dv is None:
-        return ("Bilgi Yok", "Cihaz verisi eksik, lütfen cihaz kataloğunu kontrol ediniz.")
-    if dv >= needed:
-        return ("Uygun", f"Şartname ≥ {needed} / Cihaz {dv}")
-    return ("Uygun Değil", f"Şartname ≥ {needed} / Cihaz {dv}")
-
-def compare_kapak_delme(device: Dict[str, Any], rules: Dict[str, Any]) -> Tuple[str, str]:
-    if "kapak_delme" not in rules:
-        return safe_compare_missing()
-    return ("Uygun", "Kapak delme mevcut.") if device.get("kapak_delme") else ("Uygun Değil", "Kapak delme yok.")
-
-def evaluate_barkod(requirement: Dict[str, Any], device_barkod: Dict[str, Any]) -> Tuple[str, str]:
-    """
-    requirement: {'numune': True, 'reaktif': True}  veya {'genel': True}
-    device_barkod: {'numune': True, 'reaktif': False}
-    """
-    if not requirement:
-        return safe_compare_missing()
-
-    # Şartname sadece "barkod okuyucu" diyorsa:
-    if requirement.get("genel") and not (requirement.get("numune") or requirement.get("reaktif")):
-        # Cihazda herhangi barkod var mı?
-        if device_barkod.get("numune") or device_barkod.get("reaktif"):
-            return ("Uygun", "Barkod okuyucu mevcut (numune/reaktif).")
-        return ("Uygun Değil", "Barkod okuyucu bulunmuyor.")
-
-    # Numune barkod zorunlu kabul
-    if requirement.get("numune"):
-        if not device_barkod.get("numune"):
-            return ("Uygun Değil", "Şartname numune barkod okuyucu istemektedir.")
-
-    # Reaktif barkod çoğu ihalede zeyil ihtimali — ama şartnamede özellikle istendiyse kontrol edelim:
-    if requirement.get("reaktif"):
-        if not device_barkod.get("reaktif"):
-            return ("Zeyil", "Reaktif barkod okuyucu bulunmamaktadır (zeyil önerilir).")
-
-    return ("Uygun", "Barkod gereksinimleri karşılanmaktadır.")
-
-def compare_okuma_yontemi(device: Dict[str, Any], rules: Dict[str, Any]) -> Tuple[str, str]:
+def evaluate_okuma(device, rules):
     if "okuma" not in rules:
-        return safe_compare_missing()
+        return missing()
+    # manyetik / optik kanallar clot algılamaya uygundur
+    if device.get("kanal_manyetik") or device.get("kanal_optik"):
+        return "Uygun", "Cihaz clot (pıhtı) algılamasına uygundur."
+    return "Bilgi Yok", "Okuma yöntemi cihazdan doğrulanamadı."
 
-    # Şartname clot/koagülometri istiyor.
-    # Cihaz tarafında "manyetik/optik kanal" varsa bu clot algılama prensibinde ölçüm yapılabildiğini varsayıyoruz.
-    # (SF-8300 manyetik/optik kanallar => clot detection prensibi)
-    has_any_channel = any(device.get(k) for k in ["kanal_manyetik", "kanal_optik", "kanal_toplam"])
-    if has_any_channel:
-        return ("Uygun", "Şartname clot/koagülometri istiyor. Cihaz manyetik/optik kanallarda pıhtı oluşumu (clot) temelli ölçüm yapar.")
-    return ("Bilgi Yok", "Cihaz okuma yöntemi verisi eksik, manuel kontrol ediniz.")
-
-def compare_tests(device_tests: Dict[str, Any], rules: Dict[str, Any]) -> Tuple[str, str]:
-    if "testler" not in rules or not isinstance(rules["testler"], dict) or len(rules["testler"]) == 0:
-        return safe_compare_missing()
-
-    required = [k for k, v in rules["testler"].items() if v]
-    if not required:
-        return safe_compare_missing()
-
-    missing: List[str] = []
-    for test in required:
-        dv = device_tests.get(test)
-        # cihaz test mapping'i string de olabilir (manyetik/optik) veya bool
-        if dv is False or dv is None:
-            missing.append(test)
-
-    if not missing:
-        return ("Uygun", "Şartnamede yakalanan testler cihazda mevcut.")
-    return ("Zeyil", "Eksik/uyumsuz görünen testler: " + ", ".join(missing))
+def evaluate_tests(device_tests, rules):
+    if "testler" not in rules:
+        return missing()
+    missing_tests = []
+    for t in rules["testler"]:
+        if not device_tests.get(t):
+            missing_tests.append(t)
+    if not missing_tests:
+        return "Uygun", "Tüm istenen testler mevcut."
+    return "Zeyil", f"Eksik testler: {', '.join(missing_tests)}"
 
 # ======================================================
-# STREAMLIT UI
+# UI
 # ======================================================
-st.set_page_config(page_title="İhaleBind", page_icon="🧬", layout="wide")
-
-# ---- load devices.json
-with open("devices.json", "r", encoding="utf-8") as f:
-    DEVICES = json.load(f)
-
+st.set_page_config("İhaleBind", "🧬", layout="wide")
 st.title("🧬 İhaleBind")
 st.caption("Şartnameyi okusun, kararı siz verin")
 
-# ======================================================
-# SIDEBAR - İhale seçimi
-# ======================================================
+with open("devices.json", "r", encoding="utf-8") as f:
+    DEVICES = json.load(f)
+
+# Sidebar
 with st.sidebar:
     st.header("📂 İhale Türleri")
-    selected_ihale = st.radio(
-        "İhale seçiniz",
-        ALL_IHALELER,
-        index=0,
-        label_visibility="collapsed"
-    )
+    ihale = st.radio("İhale", ALL_IHALELER, index=0)
 
-# ======================================================
-# Filter brands/models by selected ihale
-# ======================================================
-def device_supports_ihale(model_block: Dict[str, Any], ihale_name: str) -> bool:
-    return ihale_name in (model_block.get("ihale_turleri", []) or [])
-
-filtered_brands = {}
+# Filtre
+filtered = {}
 for brand, models in DEVICES.items():
-    kept_models = {m: mb for m, mb in models.items() if device_supports_ihale(mb, selected_ihale)}
-    if kept_models:
-        filtered_brands[brand] = kept_models
+    kept = {m:v for m,v in models.items() if ihale in v.get("ihale_turleri", [])}
+    if kept:
+        filtered[brand] = kept
 
-if not filtered_brands:
-    st.warning(f"'{selected_ihale}' ihalesini destekleyen cihaz henüz ekli değil. devices.json içine bu ihale türünü destekleyen cihazları ekleyince otomatik görünecek.")
+if not filtered:
+    st.warning("Bu ihale için cihaz tanımlı değil.")
     st.stop()
 
-col1, col2 = st.columns(2)
-with col1:
-    marka = st.selectbox("Cihaz Markası", list(filtered_brands.keys()))
-with col2:
-    model = st.selectbox("Cihaz Modeli", list(filtered_brands[marka
+c1, c2 = st.columns(2)
+with c1:
+    marka = st.selectbox("Cihaz Markası", filtered.keys())
+with c2:
+    model = st.selectbox("Cihaz Modeli", filtered[marka].keys())
+
+device = filtered[marka][model]["koagulasyon"]
+
+st.info(f"Seçilen Cihaz: **{marka} {model}**")
+
+# Upload
+file = st.file_uploader("Teknik Şartname (PDF / DOCX)", ["pdf", "docx"])
+
+if file:
+    text = extract_text(file)
+    st.success("Metin başarıyla çıkarıldı")
+
+    rules = extract_rules_from_text(text)
+
+    st.subheader("🧠 Şartnameden Yakalanan Kurallar")
+    st.json(rules)
+
+    rows = []
+
+    # Kanal
+    if "kanal_min" in rules:
+        res = "Uygun" if device.get("kanal_toplam",0) >= rules["kanal_min"] else "Uygun Değil"
+        rows.append(("Kanal Sayısı", f"≥ {rules['kanal_min']}", device.get("kanal_toplam"), res, ""))
+
+    # Prob
+    if "prob_min" in rules:
+        res = "Uygun" if device.get("prob_sayisi",0) >= rules["prob_min"] else "Uygun Değil"
+        rows.append(("Prob Sayısı", f"≥ {rules['prob_min']}", device.get("prob_sayisi"), res, ""))
+
+    # Kapak delme
+    if "kapak_delme" in rules:
+        res = "Uygun" if device.get("kapak_delme") else "Uygun Değil"
+        rows.append(("Kapak Delme", "Var", device.get("kapak_delme"), res, ""))
+
+    # Barkod
+    b_res, b_exp = evaluate_barkod(rules.get("barkod"), device.get("barkod", {}))
+    rows.append(("Barkod", rules.get("barkod"), device.get("barkod"), b_res, b_exp))
+
+    # Okuma
+    o_res, o_exp = evaluate_okuma(device, rules)
+    rows.append(("Okuma Yöntemi", rules.get("okuma"), "Manyetik/Optik", o_res, o_exp))
+
+    # Testler
+    t_res, t_exp = evaluate_tests(device.get("testler", {}), rules)
+    rows.append(("Testler", rules.get("testler"), device.get("testler"), t_res, t_exp))
+
+    st.subheader("📊 Şartname – Cihaz Karşılaştırma Tablosu")
+    st.table(rows)
+
+    final = "Uygun"
+    if any(r[3] == "Uygun Değil" for r in rows):
+        final = "Uygun Değil"
+    elif any(r[3] == "Zeyil" for r in rows):
+        final = "Zeyil ile Uygun"
+
+    st.subheader("✅ Genel Sonuç")
+    st.success(final)
