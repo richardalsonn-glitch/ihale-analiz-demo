@@ -174,6 +174,29 @@ if file:
     st.json(rules)
 
     rows = []
+# === Kanal (şartnamede yoksa da göster) ===
+if "kanal_min" in rules:
+    res = "Uygun" if device.get("kanal_toplam", 0) >= rules["kanal_min"] else "Uygun Değil"
+    rows.append(("Kanal Sayısı", f"≥ {rules['kanal_min']}", device.get("kanal_toplam"), res, ""))
+else:
+    rows.append(("Kanal Sayısı", "-", device.get("kanal_toplam"), "Bilgi Yok",
+                 "Şartnamede bulunamadı, lütfen manuel kontrol ediniz."))
+
+# === Prob ===
+if "prob_min" in rules:
+    res = "Uygun" if device.get("prob_sayisi", 0) >= rules["prob_min"] else "Uygun Değil"
+    rows.append(("Prob Sayısı", f"≥ {rules['prob_min']}", device.get("prob_sayisi"), res, ""))
+else:
+    rows.append(("Prob Sayısı", "-", device.get("prob_sayisi"), "Bilgi Yok",
+                 "Şartnamede bulunamadı, lütfen manuel kontrol ediniz."))
+
+# === Kapak Delme ===
+if "kapak_delme" in rules:
+    res = "Uygun" if device.get("kapak_delme") else "Uygun Değil"
+    rows.append(("Kapak Delme", "Var", device.get("kapak_delme"), res, ""))
+else:
+    rows.append(("Kapak Delme", "-", device.get("kapak_delme"), "Bilgi Yok",
+                 "Şartnamede bulunamadı, lütfen manuel kontrol ediniz."))
 
     # Kanal
     if "kanal_min" in rules:
