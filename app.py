@@ -1,12 +1,12 @@
 import streamlit as st
 from pypdf import PdfReader
 from docx import Document
-import re
 import json
+import re
 
-# ======================================================
+# --------------------------------------------------
 # METİN ÇIKARMA
-# ======================================================
+# --------------------------------------------------
 def extract_text_from_pdf(file):
     reader = PdfReader(file)
     return "\n".join(page.extract_text() or "" for page in reader.pages)
@@ -15,70 +15,28 @@ def extract_text_from_docx(file):
     doc = Document(file)
     return "\n".join(p.text for p in doc.paragraphs)
 
-# ======================================================
+# --------------------------------------------------
 # NORMALIZE
-# ======================================================
-def normalize_tr(text):
+# --------------------------------------------------
+def normalize(text):
     text = text.lower()
-    text = (
-        text.replace("ı", "i")
-        .replace("ş", "s")
-        .replace("ğ", "g")
-        .replace("ü", "u")
-        .replace("ö", "o")
-        .replace("ç", "c")
-    )
+    for a, b in [("ı","i"),("ş","s"),("ğ","g"),("ü","u"),("ö","o"),("ç","c")]:
+        text = text.replace(a,b)
     return re.sub(r"\s+", " ", text)
 
-# ======================================================
-# TEST LİSTESİ BLOĞU
-# ======================================================
-def extract_test_block(text):
-    headers = [
-        "istenen test",
-        "calisilacak test",
-        "test listesi",
-        "testler",
-        "calisilacak parametre"
-    ]
-    for h in headers:
-        idx = text.find(h)
-        if idx != -1:
-            return text[idx:idx + 1200]
-    return ""
-
-# ======================================================
-# ŞARTNAME KURAL ÇIKARICI (V1)
-# ======================================================
+# --------------------------------------------------
+# ŞARTNAME ANALİZ
+# --------------------------------------------------
 def extract_rules(raw_text):
-    t = normalize_tr(raw_text)
+    t = normalize(raw_text)
     rules = {}
 
-    # Kanal
-    kanal = re.findall(r"en az\s*(\d+)\s*kanal", t)
-    if kanal:
-        rules["kanal_min"] = max(map(int, kanal))
-
-    # Prob
-    prob = re.findall(r"en az\s*(\d+)\s*prob", t)
-    if prob:
-        rules["prob_min"] = max(map(int, prob))
-
-    # =========================
-    # BARKOD (AYRINTILI)
-    # =========================
+    # Barkod
     barkod = {}
-
-    if any(k in t for k in [
-        "numune barkod", "hasta barkod", "tup barkod", "sample barcode"
-    ]):
+    if "numune barkod" in t or "sample barcode" in t:
         barkod["numune"] = True
-
-    if any(k in t for k in [
-        "reaktif barkod", "kit barkod", "reagent barcode"
-    ]):
+    if "reaktif barkod" in t or "kit barkod" in t:
         barkod["reaktif"] = True
-
     if barkod:
         rules["barkod"] = barkod
 
@@ -91,6 +49,62 @@ def extract_rules(raw_text):
     if methods:
         rules["okuma_yontemi"] = methods
 
-    # =========================
-    # TESTLER
-    #
+    # Testler
+    tests = {}
+    if "pt" in t: tests["PT"] = True
+    if "aptt" in t: tests["APTT"] = True
+    if "fibrinojen" in t: tests["Fibrinojen"] = True
+    if "d-dimer" in t or "ddimer" in t: tests["D-Dimer"] = True
+    if any(k in t for k in ["faktor", "factor"]):
+        tests["Faktör"] = True
+    if tests:
+        rules["istenen_testler"] = tests
+
+    return rules
+
+# --------------------------------------------------
+# STREAMLIT UI
+# --------------------------------------------------
+st.set_page_config("İhaleBind", "🧬", layout="wide")
+
+st.title("🧬 İhaleBind")
+st.caption("Şartnameyi okusun, kararı siz verin")
+
+# --------------------------------------------------
+# CİHAZ KATALOĞU
+# --------------------------------------------------
+with open("devices.json", "r", encoding="utf-8") as f:
+    devices = json.load(f)
+
+col1, col2 = st.columns(2)
+
+with col1:
+    marka = st.selectbox("Cihaz Markası", devices.keys())
+with col2:
+    model = st.selectbox("Cihaz Modeli", devices[marka].keys())
+
+device = devices[marka][model]["koagulasyon"]
+
+st.info(f"Seçilen Cihaz: {marka} {model}")
+
+# --------------------------------------------------
+# DOSYA YÜKLEME
+# --------------------------------------------------
+file = st.file_uploader("Teknik şartname yükleyin (PDF / Word)", ["pdf","docx"])
+
+if file:
+    text = extract_text_from_pdf(file) if file.name.endswith(".pdf") else extract_text_from_docx(file)
+    rules = extract_rules(text)
+
+    st.subheader("📌 Şartnameden Yakalanan Kurallar")
+    st.json(rules)
+
+    st.subheader("🔍 Cihaz Özeti")
+    st.write("Toplam Kanal:", device.get("kanal_toplam"))
+    st.write("Prob Sayısı:", device.get("prob_sayisi"))
+
+    st.subheader("📦 Barkod Durumu")
+    st.json(device.get("barkod", {}))
+
+    st.subheader("🧪 Çalışılabilen Testler")
+    st.json(device.get("testler", {}))
