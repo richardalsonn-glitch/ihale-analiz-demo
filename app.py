@@ -114,6 +114,32 @@ with open("devices.json", "r", encoding="utf-8") as f:
 
 st.title("🧬 İhaleBind")
 st.caption("Şartnameyi okusun, kararı siz verin")
+with st.sidebar:
+    st.header("🧭 Cihaz & İhale Menüsü")
+
+    st.markdown("### 📦 Seçili Cihaz")
+    st.write(f"**Marka:** {marka}")
+    st.write(f"**Model:** {model}")
+
+    st.divider()
+
+    st.markdown("### 📂 İhale Türleri")
+
+    ihale_listesi = [
+        "Koagülasyon",
+        "Biyokimya",
+        "Hormon",
+        "Kan Gazı",
+        "İdrar",
+        "Hemogram"
+    ]
+
+    for ihale in ihale_listesi:
+        destek = ihale in device.get("ihale_turleri", [])
+        if destek:
+            st.success(f"✅ {ihale} İhalesi")
+        else:
+            st.error(f"❌ {ihale} İhalesi")
 
 col1, col2 = st.columns(2)
 with col1:
