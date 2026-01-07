@@ -1,15 +1,8 @@
 import streamlit as st
+import json
+import re
 from pypdf import PdfReader
 from docx import Document
-import re
-import json
-import os
-
-# ======================================================
-# DOSYA YOLU (Cloud + Local uyumlu)
-# ======================================================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEVICE_PATH = os.path.join(BASE_DIR, "devices.json")
 
 # ======================================================
 # METİN ÇIKARMA
@@ -27,38 +20,29 @@ def extract_text_from_docx(file):
 # ======================================================
 def normalize_tr(text):
     text = text.lower()
-    text = (
-        text.replace("ı", "i")
-        .replace("ş", "s")
-        .replace("ğ", "g")
-        .replace("ü", "u")
-        .replace("ö", "o")
-        .replace("ç", "c")
-    )
+    for a, b in [("ı","i"),("ş","s"),("ğ","g"),("ü","u"),("ö","o"),("ç","c")]:
+        text = text.replace(a,b)
     return re.sub(r"\s+", " ", text)
 
 # ======================================================
-# TEST LİSTESİ BLOĞU
+# TEST BLOĞU
 # ======================================================
 def extract_test_block(text):
     headers = [
-        "istenen test",
-        "calisilacak test",
-        "test listesi",
-        "testler",
-        "calisilacak parametre"
+        "istenen test", "calisilacak test", "test listesi",
+        "testler", "calisilacak parametre"
     ]
     for h in headers:
         idx = text.find(h)
         if idx != -1:
-            return text[idx:idx + 1200]
+            return text[idx:idx+1200]
     return ""
 
 # ======================================================
-# ŞARTNAME KURAL YAKALAYICI (V1)
+# ŞARTNAME ANALİZ
 # ======================================================
-def extract_rules(text):
-    t = normalize_tr(text)
+def extract_rules_from_text(raw_text):
+    t = normalize_tr(raw_text)
     rules = {}
 
     # Kanal
@@ -71,9 +55,9 @@ def extract_rules(text):
     if prob:
         rules["prob_min"] = max(map(int, prob))
 
-    # Barkod detay
+    # Barkod (ayrıntılı)
     barkod = {}
-    if any(k in t for k in ["numune barkod", "sample barcode", "hasta barkod", "tup barkod"]):
+    if any(k in t for k in ["numune barkod", "sample barcode", "hasta barkod"]):
         barkod["numune"] = True
     if any(k in t for k in ["reaktif barkod", "kit barkod", "reagent barcode"]):
         barkod["reaktif"] = True
@@ -90,11 +74,10 @@ def extract_rules(text):
         rules["okuma_yontemi"] = methods
 
     # Testler
-    block = extract_test_block(t)
-    scan = block if block else t
-
+    scan = extract_test_block(t) or t
     tests = {}
-    if "pt" in scan or "protrombin" in scan:
+
+    if "pt" in scan:
         tests["PT"] = True
     if "aptt" in scan:
         tests["APTT"] = True
@@ -104,97 +87,85 @@ def extract_rules(text):
         tests["D-Dimer"] = True
 
     if any(k in scan for k in ["faktor", "factor"]):
-        tests["Faktör"] = True
+        tests["Faktor"] = True
         rules["faktor_durumu"] = (
-            "opsiyonel_dis_lab"
-            if any(k in scan for k in ["dis lab", "referans lab", "gonderilebilir"])
-            else "zorunlu"
+            "opsiyonel" if "dis lab" in scan else "zorunlu"
         )
 
     if tests:
         rules["istenen_testler"] = tests
 
     return rules
-    # =========================
+
+# ======================================================
+# BARKOD DEĞERLENDİRME
+# ======================================================
+def evaluate_barkod(requirement, device):
+    device_barkod = device.get("barkod", {})
+
+    if requirement.get("numune") and not device_barkod.get("numune"):
+        return "Uygun Değil", "Numune barkod okuyucu yok"
+
+    if requirement.get("reaktif") and not device_barkod.get("reaktif"):
+        return "Zeyil", "Reaktif barkod bulunmamaktadır"
+
+    return "Uygun", "Barkod gereksinimleri karşılanıyor"
 
 # ======================================================
 # STREAMLIT UI
 # ======================================================
-st.set_page_config(page_title="İhaleBind", page_icon="🧬", layout="wide")
+st.set_page_config("İhaleBind", "🧬", layout="wide")
 
-# ======================================================
-# CİHAZ KATALOĞU
-# ======================================================
-with open(DEVICE_PATH, "r", encoding="utf-8") as f:
+with open("devices.json", "r", encoding="utf-8") as f:
     devices = json.load(f)
 
-# ======================================================
-# HEADER
-# ======================================================
-st.markdown("""
-# 🧬 İhaleBind
-### Şartnameyi okusun, kararı siz verin
-""")
+st.title("🧬 İhaleBind")
+st.caption("Şartnameyi okusun, kararı siz verin")
 
-st.divider()
-
-# ======================================================
-# ÜST BAR – MARKA / MODEL
-# ======================================================
-col1, col2 = st.columns(2)
-
-with col1:
-    marka = st.selectbox("Cihaz Markası", list(devices.keys()))
-
-with col2:
-    model = st.selectbox("Cihaz Modeli", list(devices[marka].keys()))
-
-selected_device = devices[marka][model]
-st.info(f"Seçilen Cihaz: **{marka} {model}**")
-
-# ======================================================
-# SOL MENÜ – İHALE TÜRLERİ
-# ======================================================
+# Sidebar
 with st.sidebar:
     st.header("📂 İhale Türleri")
-    for ihale in ["Koagülasyon", "Biyokimya", "Hormon", "Kan Gazı", "İdrar", "Hemogram"]:
-        if ihale in selected_device["ihale_turleri"]:
-            st.success(f"{ihale} İhalesi")
-        else:
-            st.error(f"{ihale} İhalesi")
+    ihale_turu = st.radio(
+        "",
+        ["Koagülasyon", "Biyokimya", "Hormon", "Kan Gazı", "İdrar", "Hemogram"]
+    )
 
-# ======================================================
-# DOSYA YÜKLEME
-# ======================================================
-st.subheader("📄 Teknik Şartname")
+# Marka / Model
+col1, col2 = st.columns(2)
+with col1:
+    marka = st.selectbox("Cihaz Markası", devices.keys())
+with col2:
+    model = st.selectbox("Cihaz Modeli", devices[marka].keys())
 
-file = st.file_uploader("PDF veya Word yükleyin", type=["pdf", "docx"])
+device = devices[marka][model]["koagulasyon"]
+st.info(f"Seçilen cihaz: **{marka} {model}**")
+
+# Dosya
+file = st.file_uploader("Teknik Şartname (PDF / Word)", ["pdf", "docx"])
 
 if file:
     text = extract_text_from_pdf(file) if file.name.endswith(".pdf") else extract_text_from_docx(file)
+    st.success("Metin başarıyla çıkarıldı")
 
-    if not text.strip():
-        st.error("Metin çıkarılamadı (OCR gerekebilir)")
-    else:
-        st.success("Metin başarıyla çıkarıldı")
+    rules = extract_rules_from_text(text)
+    st.subheader("🧠 Şartnameden Yakalanan Kurallar")
+    st.json(rules)
 
-        rules = extract_rules(text)
-        st.subheader("🧠 Şartnameden Yakalanan Kurallar")
-        st.json(rules)
+    st.subheader("🔍 Cihaz Özeti")
+    st.write("Toplam Kanal:", device.get("kanal_toplam"))
+    st.write("Prob Sayısı:", device.get("prob_sayisi"))
+    st.write("Numune Barkod:", device.get("barkod", {}).get("numune", False))
+    st.write("Reaktif Barkod:", device.get("barkod", {}).get("reaktif", False))
 
-        # ======================================================
-        # CİHAZ ÖZETİ
-        # ======================================================
-        st.subheader("🔍 Cihaz Özeti")
-        koag = selected_device.get("koagulasyon", {})
+    if "barkod" in rules:
+        durum, aciklama = evaluate_barkod(rules["barkod"], device)
+        st.subheader("🏷️ Barkod Değerlendirmesi")
+        if durum == "Uygun":
+            st.success(aciklama)
+        elif durum == "Zeyil":
+            st.warning(aciklama)
+        else:
+            st.error(aciklama)
 
-        st.write("Toplam Kanal:", koag.get("kanal_toplam"))
-        st.write("Prob Sayısı:", koag.get("prob_sayisi"))
-        st.write("Kapak Delme:", "Var" if koag.get("kapak_delme") else "Yok")
-
-        barkod = koag.get("barkod", {})
-        st.write("Numune Barkod:", "Var" if barkod.get("numune") else "Yok")
-        st.write("Reaktif Barkod:", "Var" if barkod.get("reaktif") else "Yok")
-
-        st.subheader("🧪 Çalışılabilen Testler")
-        st.json(koag.get("testler", {}))
+    st.subheader("🧪 Çalışılabilen Testler")
+    st.json(device.get("testler"))
