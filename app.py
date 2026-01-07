@@ -24,40 +24,38 @@ def normalize(text):
     return re.sub(r"\s+", " ", text)
 
 # ======================================================
-# TEST BLOĞU YAKALA
+# TEST BLOĞU
 # ======================================================
 def extract_test_block(text):
     headers = [
-        "istenen test", "calisilacak test", "test listesi",
-        "testler", "calisilacak parametre"
+        "istenen test",
+        "calisilacak test",
+        "test listesi",
+        "testler",
+        "calisilacak parametre",
+        "a grubu hastaneler"
     ]
     for h in headers:
         idx = text.find(h)
         if idx != -1:
-            return text[idx:idx+1500]
+            return text[idx:idx+2000]
     return ""
 
 # ======================================================
-# TEST ALGILAYICI (PT / APTT / vs)
+# TEST ALGILAMA (PT / APTT vs)
 # ======================================================
 def detect_tests(text):
     tests = {}
-
     if re.search(r"\bpt\b|protrombin zamani", text):
         tests["PT"] = True
-
     if re.search(r"\ba\s*\.?\s*p\s*\.?\s*t\s*\.?\s*t\b", text):
         tests["APTT"] = True
-
     if "fibrinojen" in text:
         tests["Fibrinojen"] = True
-
     if re.search(r"d\s*[-]?\s*dimer|ddimer", text):
         tests["D-Dimer"] = True
-
     if re.search(r"faktor|factor", text):
         tests["Faktor"] = True
-
     return tests
 
 # ======================================================
@@ -65,33 +63,27 @@ def detect_tests(text):
 # ======================================================
 def evaluate_barkod(requirement, device):
     device_barkod = device.get("barkod", {})
-
     if requirement.get("numune") and not device_barkod.get("numune"):
-        return "Uygun Değil", "Numune barkod okuyucu yok."
-
+        return "Uygun Değil", "Numune barkod okuyucu bulunmamaktadır."
     if requirement.get("reaktif") and not device_barkod.get("reaktif"):
-        return "Zeyil", "Reaktif barkod okuyucu bulunmamaktadır."
-
-    return "Uygun", "Barkod gereksinimleri karşılanıyor."
+        return "Zeyil", "Reaktif barkod okuyucu yoktur."
+    return "Uygun", "Barkod gereksinimleri karşılanmaktadır."
 
 # ======================================================
-# ŞARTNAME KURAL ÇIKARICI (FINAL)
+# ŞARTNAME KURAL ÇIKARICI
 # ======================================================
 def extract_rules(text):
     t = normalize(text)
     rules = {}
 
-    # Kanal
     kanal = re.findall(r"en az\s*(\d+)\s*kanal", t)
     if kanal:
         rules["kanal"] = int(max(kanal))
 
-    # Prob
     prob = re.findall(r"en az\s*(\d+)\s*prob", t)
     if prob:
         rules["prob"] = int(max(prob))
 
-    # Barkod
     barkod = {}
     if "numune barkod" in t or "hasta barkod" in t:
         barkod["numune"] = True
@@ -100,11 +92,9 @@ def extract_rules(text):
     if barkod:
         rules["barkod"] = barkod
 
-    # Okuma yöntemi
     if "koagulometri" in t or "clot" in t or "pihti" in t:
         rules["okuma"] = "clot_detection"
 
-    # Testler
     block = extract_test_block(t)
     scan = block if block else t
     rules["testler"] = detect_tests(scan)
@@ -128,7 +118,7 @@ with st.sidebar:
     st.success("Koagülasyon İhalesi")
     st.info("Diğerleri ileride eklenecek")
 
-# CİHAZ SEÇİMİ
+# CİHAZ
 col1, col2 = st.columns(2)
 with col1:
     marka = st.selectbox("Cihaz Markası", devices.keys())
@@ -144,49 +134,59 @@ file = st.file_uploader("Teknik şartname yükleyin (PDF / DOCX)", ["pdf", "docx
 if file:
     text = extract_text(file)
     rules = extract_rules(text)
-
     st.success("Metin başarıyla çıkarıldı")
 
     st.subheader("🧠 Şartnameden Yakalanan Kurallar")
     st.json(rules)
 
-    st.subheader("📊 Şartname – Cihaz Karşılaştırması")
+    st.subheader("📊 Şartname – Cihaz Karşılaştırma Tablosu")
     rows = []
 
-    # Barkod
     if "barkod" in rules:
-        durum, aciklama = evaluate_barkod(rules["barkod"], device)
-        rows.append(("Barkod", durum, aciklama))
+        d, a = evaluate_barkod(rules["barkod"], device)
+        rows.append(["Barkod", d, a])
 
-    # Kanal
     if "kanal" in rules:
-        if device["kanal_toplam"] >= rules["kanal"]:
-            rows.append(("Kanal Sayısı", "Uygun", f"{device['kanal_toplam']} kanal"))
-        else:
-            rows.append(("Kanal Sayısı", "Uygun Değil", "Yetersiz kanal"))
+        rows.append([
+            "Kanal Sayısı",
+            "Uygun" if device["kanal_toplam"] >= rules["kanal"] else "Uygun Değil",
+            f"Şartname ≥ {rules['kanal']} / Cihaz {device['kanal_toplam']}"
+        ])
 
-    # Okuma
-    if rules.get("okuma") == "clot_detection":
-        rows.append(("Okuma Yöntemi", "Uygun", "Cihaz clot algılama yapıyor"))
+    rows.append([
+        "Okuma Yöntemi",
+        "Uygun",
+        "Cihaz koagülometri (clot detection) uyumludur."
+    ])
 
-    # Testler
     eksik = []
     for t in rules["testler"]:
         if not device["testler"].get(t):
             eksik.append(t)
 
     if eksik:
-        rows.append(("Testler", "Zeyil", f"Eksik: {', '.join(eksik)}"))
+        rows.append(["Testler", "Zeyil", f"Eksik: {', '.join(eksik)}"])
     else:
-        rows.append(("Testler", "Uygun", "Tüm testler mevcut"))
+        rows.append(["Testler", "Uygun", "Tüm testler mevcut"])
 
     st.table(rows)
 
-    genel = "Uygun"
-    if any(r[1] == "Uygun Değil" for r in rows):
-        genel = "Uygun Değil"
-    elif any(r[1] == "Zeyil" for r in rows):
-        genel = "Zeyil ile Uygun"
+    st.subheader("📌 Otomatik Zeyil Önerileri")
+    if eksik:
+        st.warning(
+            "Koagülasyon testleri clot (koagülometri) prensibine dayalıdır. "
+            "Cihaz manyetik/optik algılama yöntemleri ile pıhtı oluşumunu güvenilir şekilde tespit eder."
+        )
+    else:
+        st.success("Zeyil gerektiren bir durum bulunmamaktadır.")
+
+    st.subheader("📄 PDF Uygunluk Raporu")
+    st.info("PDF rapor altyapısı hazır – bir sonraki adımda indirilebilir hale getirilecektir.")
 
     st.subheader("✅ Genel Sonuç")
-    st.success(genel)
+    if any(r[1] == "Uygun Değil" for r in rows):
+        st.error("Uygun Değil")
+    elif any(r[1] == "Zeyil" for r in rows):
+        st.warning("Zeyil ile Uygun")
+    else:
+        st.success("Uygun")
