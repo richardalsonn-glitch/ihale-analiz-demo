@@ -114,12 +114,6 @@ with open("devices.json", "r", encoding="utf-8") as f:
 
 st.title("🧬 İhaleBind")
 st.caption("Şartnameyi okusun, kararı siz verin")
-with st.sidebar:
-    st.header("🧭 Cihaz & İhale Menüsü")
-
-    st.markdown("### 📦 Seçili Cihaz")
-    st.write(f"**Marka:** {marka}")
-    st.write(f"**Model:** {model}")
 
     st.divider()
 
@@ -148,6 +142,34 @@ with col2:
     model = st.selectbox("Cihaz Modeli", devices[marka].keys())
 
 device = devices[marka][model]
+# ===== SOL MENÜ =====
+with st.sidebar:
+    st.header("🧭 Cihaz & İhale Menüsü")
+
+    st.markdown("### 📦 Seçili Cihaz")
+    st.write(f"**Marka:** {marka}")
+    st.write(f"**Model:** {model}")
+
+    st.divider()
+
+    st.markdown("### 📂 İhale Türleri")
+
+    ihale_listesi = [
+        "Koagülasyon",
+        "Biyokimya",
+        "Hormon",
+        "Kan Gazı",
+        "İdrar",
+        "Hemogram"
+    ]
+
+    for ihale in ihale_listesi:
+        destek = ihale in selected_device.get("ihale_turleri", [])
+        if destek:
+            st.success(f"✅ {ihale} İhalesi")
+        else:
+            st.error(f"❌ {ihale} İhalesi")
+
 st.info(f"Seçilen cihaz: **{marka} {model}**")
 
 file = st.file_uploader("PDF veya Word yükleyin", ["pdf", "docx"])
