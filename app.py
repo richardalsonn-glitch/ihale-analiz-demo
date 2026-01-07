@@ -116,22 +116,6 @@ def extract_rules(text):
 
     return rules
     # =========================
-# BARKOD DEĞERLENDİRME
-# =========================
-if "barkod" in rules:
-    barkod_sonuc = evaluate_barkod(
-        requirement=rules["barkod"],
-        device=selected_device["koagulasyon"]
-    )
-
-    st.subheader("🏷️ Barkod Değerlendirmesi")
-
-    if barkod_sonuc["durum"] == "Uygun":
-        st.success(f"✅ {barkod_sonuc['aciklama']}")
-    elif barkod_sonuc["durum"] == "Zeyil":
-        st.warning(f"⚠️ {barkod_sonuc['aciklama']}")
-    else:
-        st.error(f"❌ {barkod_sonuc['aciklama']}")
 
 # ======================================================
 # STREAMLIT UI
