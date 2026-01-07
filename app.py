@@ -4,127 +4,10 @@ from docx import Document
 import re
 import json
 
-# -----------------------------
+# =============================
 # Dosyadan metin çıkarma
-# -----------------------------
+# =============================
 def extract_text_from_pdf(uploaded_file) -> str:
-
-# -----------------------------
-# Test listesi bloğunu yakala
-# -----------------------------
-def extract_test_block(t: str) -> str:
-    headers = [
-        "istenen test", "istenilen test", "calisilacak test", "calisilacak tetkik",
-        "test listesi", "testler", "koagulasyon test", "calisilacak parametre"
-    ]
-    for h in headers:
-        idx = t.find(h)
-        if idx != -1:
-            end = min(len(t), idx + 1200)  # V1: başlıktan sonra 1200 karakter
-            return t[idx:end]
-    return ""
-
-
-# -----------------------------
-# Metin normalize
-# -----------------------------
-def normalize_tr(text: str) -> str:
-    text = text.lower()
-    text = (text.replace("ı", "i")
-            .replace("İ", "i")
-            .replace("ş", "s")
-            .replace("ğ", "g")
-            .replace("ü", "u")
-            .replace("ö", "o")
-            .replace("ç", "c"))
-    text = re.sub(r"\s+", " ", text)
-    return text
-
-
-# -----------------------------
-# Kural çıkar (tek fonksiyon olacak!)
-# -----------------------------
-def extract_rules_from_text(raw_text: str) -> dict:
-    t = normalize_tr(raw_text)
-    rules = {}
-
-    # --- Kanal sayısı
-    kanal_patterns = [
-        r"en az\s*(\d+)\s*(adet\s*)?(olcum|test|reaksiyon)?\s*kanal",
-        r"(\d+)\s*(adet\s*)?(olcum|test|reaksiyon)\s*kanali",
-        r"en az\s*(\d+)\s*kanal"
-    ]
-    kanal_vals = []
-    for pat in kanal_patterns:
-        m = re.search(pat, t)
-        if m:
-            kanal_vals.append(int(m.group(1)))
-    if kanal_vals:
-        rules["kanal_toplam_min"] = max(kanal_vals)
-
-    # --- Prob sayısı
-    prob_patterns = [
-        r"en az\s*(\d+)\s*\(?[a-z]*\)?\s*prob",
-        r"(\d+)\s*problu"
-    ]
-    prob_vals = []
-    for pat in prob_patterns:
-        m = re.search(pat, t)
-        if m:
-            prob_vals.append(int(m.group(1)))
-    if prob_vals:
-        rules["prob_sayisi_min"] = max(prob_vals)
-
-    # --- Barkod
-    if "barkod" in t:
-        rules["barkod_okuma_gerekli"] = True
-
-    # --- Okuma yöntemi
-    method_hits = set()
-    if any(k in t for k in ["manyetik", "manyetik prensip"]):
-        method_hits.add("manyetik")
-    if any(k in t for k in ["mekanik", "clot", "clotting", "clot detection", "pihti olusumu", "pihti"]):
-        method_hits.add("mekanik_clot")
-    if "koagulometri" in t:
-        method_hits.add("mekanik_clot")
-    if method_hits:
-        rules["okuma_yontemi"] = sorted(method_hits)
-
-    # --- Test listesi bloğu
-    test_block = extract_test_block(t)
-    if test_block:
-        rules["test_listesi_blok"] = test_block[:400]  # ekranda kısa göster
-
-    scan_text = test_block if test_block else t
-
-    # --- Testler + Faktör
-    tests = {}
-
-    if " pt " in f" {scan_text} " or "protrombin" in scan_text:
-        tests["PT"] = True
-    if "aptt" in scan_text:
-        tests["APTT"] = True
-    if "fibrinojen" in scan_text:
-        tests["Fibrinojen"] = True
-    if any(k in scan_text for k in ["d-dimer", "d dimer", "ddimer"]):
-        tests["D-Dimer"] = True
-
-    faktor_hit = any(k in scan_text for k in ["faktor", "faktör", "factor"])
-    if faktor_hit:
-        tests["Faktör"] = True
-
-        dis_lab = any(k in scan_text for k in [
-            "dis lab", "dis laboratuvar", "referans lab", "gonderilebilir",
-            "baska laboratuvar", "hizmet alimi"
-        ])
-        rules["faktor_testi"] = "opsiyonel_dis_lab" if dis_lab else "zorunlu"
-
-    if tests:
-        rules["istenen_testler"] = tests
-
-    return rules
-
-
     reader = PdfReader(uploaded_file)
     parts = []
     for page in reader.pages:
@@ -135,178 +18,120 @@ def extract_text_from_docx(uploaded_file) -> str:
     doc = Document(uploaded_file)
     return "\n".join([p.text for p in doc.paragraphs])
 
-# -----------------------------
-# Metin normalize + kural çıkar
-# -----------------------------
+# =============================
+# Test listesi bloğunu yakala
+# =============================
+def extract_test_block(t: str) -> str:
+    headers = [
+        "istenen test", "istenilen test", "calisilacak test",
+        "calisilacak tetkik", "test listesi", "testler",
+        "koagulasyon test", "calisilacak parametre"
+    ]
+    for h in headers:
+        idx = t.find(h)
+        if idx != -1:
+            return t[idx: idx + 1200]
+    return ""
+
+# =============================
+# Metin normalize
+# =============================
 def normalize_tr(text: str) -> str:
     text = text.lower()
     text = (text.replace("ı", "i")
-                .replace("İ", "i")
-                .replace("ş", "s")
-                .replace("ğ", "g")
-                .replace("ü", "u")
-                .replace("ö", "o")
-                .replace("ç", "c"))
+            .replace("ş", "s")
+            .replace("ğ", "g")
+            .replace("ü", "u")
+            .replace("ö", "o")
+            .replace("ç", "c"))
     text = re.sub(r"\s+", " ", text)
     return text
 
+# =============================
+# Kural çıkarma
+# =============================
 def extract_rules_from_text(raw_text: str) -> dict:
     t = normalize_tr(raw_text)
     rules = {}
 
-    kanal_patterns = [
-        r"en az\s*(\d+)\s*(adet\s*)?(olcum|test|reaksiyon)?\s*kanal",
-        r"(\d+)\s*(adet\s*)?(olcum|test|reaksiyon)\s*kanali",
-        r"en az\s*(\d+)\s*kanal"
-    ]
-    kanal_vals = []
-    for pat in kanal_patterns:
-        m = re.search(pat, t)
-        if m:
-            kanal_vals.append(int(m.group(1)))
-    if kanal_vals:
-        rules["kanal_toplam_min"] = max(kanal_vals)
+    # Kanal
+    kanal = re.findall(r"en az\s*(\d+)\s*kanal", t)
+    if kanal:
+        rules["kanal_toplam_min"] = max(map(int, kanal))
 
-    prob_patterns = [
-        r"en az\s*(\d+)\s*\(?[a-z]*\)?\s*prob",
-        r"(\d+)\s*problu"
-    ]
-    prob_vals = []
-    for pat in prob_patterns:
-        m = re.search(pat, t)
-        if m:
-            prob_vals.append(int(m.group(1)))
-    if prob_vals:
-        rules["prob_sayisi_min"] = max(prob_vals)
+    # Prob
+    prob = re.findall(r"en az\s*(\d+)\s*prob", t)
+    if prob:
+        rules["prob_sayisi_min"] = max(map(int, prob))
 
+    # Barkod
     if "barkod" in t:
-        rules["barkod_okuma_gerekli"] = True
+        rules["barkod_okuma"] = True
 
-    method_hits = set()
-    if any(k in t for k in ["manyetik", "manyetik prensip"]):
-        method_hits.add("manyetik")
-    if any(k in t for k in ["mekanik", "clot", "clotting", "clot detection", "pihti olusumu", "pihti"]):
-        method_hits.add("mekanik_clot")
-    if "koagulometri" in t:
-        method_hits.add("mekanik_clot")
-    if method_hits:
-        rules["okuma_yontemi"] = sorted(method_hits)
+    # Okuma yöntemi
+    method = set()
+    if "manyetik" in t:
+        method.add("manyetik")
+    if any(k in t for k in ["mekanik", "clot", "clot detection", "pihti"]):
+        method.add("mekanik_clot")
+    if method:
+        rules["okuma_yontemi"] = list(method)
 
-    faktor_var = ("faktor" in t) or ("factor" in t)
-    if faktor_var:
-        dis_lab = any(k in t for k in ["dis lab", "dis laboratuvar", "referans lab", "baska laboratuvar", "diger hastanede", "gonderilebilir"])
-        rules["faktor_testi"] = "opsiyonel_dis_lab" if dis_lab else "zorunlu"
+    # Test listesi
+    test_block = extract_test_block(t)
+    scan = test_block if test_block else t
 
     tests = {}
-    if " pt " in f" {t} " or "protrombin" in t:
+    if "pt" in scan:
         tests["PT"] = True
-    if "aptt" in t:
+    if "aptt" in scan:
         tests["APTT"] = True
-    if "fibrinojen" in t:
+    if "fibrinojen" in scan:
         tests["Fibrinojen"] = True
-    if any(k in t for k in ["d-dimer", "d dimer", "ddimer"]):
+    if "d-dimer" in scan or "ddimer" in scan:
         tests["D-Dimer"] = True
+
+    if any(k in scan for k in ["faktor", "factor", "faktör"]):
+        tests["Faktör"] = True
+        rules["faktor_testi"] = (
+            "opsiyonel_dis_lab"
+            if any(k in scan for k in ["dis lab", "referans lab", "hizmet alimi"])
+            else "zorunlu"
+        )
+
     if tests:
-        rules["testler"] = tests
+        rules["istenen_testler"] = tests
 
     return rules
 
-# Sayfa ayarları
-st.set_page_config(
-    page_title="İhaleBind",
-    page_icon="🧬",
-    layout="wide"
-)
+# =============================
+# STREAMLIT UI
+# =============================
+st.set_page_config("İhaleBind", "🧬", layout="wide")
 
-# ===== CİHAZ KATALOĞUNU OKU =====
 with open("devices.json", "r", encoding="utf-8") as f:
     devices = json.load(f)
 
-# ===== HEADER =====
-st.markdown("""
-# 🧬 İhaleBind
-### Şartnameyi okusun, kararı siz verin
-""")
+st.title("🧬 İhaleBind")
+st.caption("Şartnameyi okusun, kararı siz verin")
 
-st.divider()
+col1, col2 = st.columns(2)
+with col1:
+    marka = st.selectbox("Cihaz Markası", devices.keys())
+with col2:
+    model = st.selectbox("Cihaz Modeli", devices[marka].keys())
 
-# ===== ÜST BAR: MARKA / MODEL =====
-col_brand, col_model = st.columns(2)
+device = devices[marka][model]
+st.info(f"Seçilen cihaz: **{marka} {model}**")
 
-with col_brand:
-    marka = st.selectbox(
-        "Cihaz Markası",
-        list(devices.keys())
-    )
-
-with col_model:
-    model = st.selectbox(
-        "Cihaz Modeli",
-        list(devices[marka].keys())
-    )
-
-selected_device = devices[marka][model]
-
-st.info(f"Seçilen Cihaz: **{marka} {model}**")
-
-# ===== SOL MENÜ: İHALE TÜRLERİ =====
-with st.sidebar:
-    st.header("📂 İhale Türleri")
-
-    for ihale in [
-        "Koagülasyon İhalesi",
-        "Biyokimya İhalesi",
-        "Hormon İhalesi",
-        "Kan Gazı İhalesi",
-        "İdrar İhalesi",
-        "Hemogram İhalesi"
-    ]:
-        destek = ihale.replace(" İhalesi", "") in selected_device.get("ihale_turleri", [])
-
-        if destek:
-            st.success(ihale)
-        else:
-            st.caption(f"❌ {ihale}")
-
-# ===== ANA ALAN =====
-st.subheader("📄 Teknik Şartname")
-
-file = st.file_uploader(
-    "PDF veya Word yükleyin",
-    type=["pdf", "docx"]
-)
+file = st.file_uploader("PDF veya Word yükleyin", ["pdf", "docx"])
 
 if file:
-    # metin çıkar
-    if file.name.lower().endswith(".pdf"):
-        text = extract_text_from_pdf(file)
-    elif file.name.lower().endswith(".docx"):
-        text = extract_text_from_docx(file)
-    else:
-        text = ""
+    text = extract_text_from_pdf(file) if file.name.endswith("pdf") else extract_text_from_docx(file)
 
     if not text.strip():
-        st.error("Metin çıkarılamadı. PDF tarama olabilir (OCR gerekebilir).")
+        st.error("Metin çıkarılamadı (OCR gerekebilir)")
     else:
-        st.success("Metin çıkarıldı ✅")
-
         rules = extract_rules_from_text(text)
-
-        st.subheader("🧠 Şartnameden Yakalanan Kurallar (V1)")
+        st.subheader("🧠 Şartnameden Yakalanan Kurallar")
         st.json(rules)
-
-    # Aşağıdaki mevcut özet kısmın kalsın
-    st.success(f"Yüklenen dosya: {file.name}")
-
-    st.subheader("🔍 Cihaz Özeti")
-
-    if "koagulasyon" in selected_device:
-        koag = selected_device["koagulasyon"]
-
-        st.write("**Toplam Kanal:**", koag.get("kanal_toplam"))
-        st.write("**Prob Sayısı:**", koag.get("prob_sayisi"))
-        st.write("**Kapak Delme:**", "Var" if koag.get("kapak_delme") else "Yok")
-        st.write("**Barkod Okuma:**", "Var" if koag.get("barkod_okuma") else "Yok")
-
-        st.subheader("🧪 Çalışılabilen Testler")
-        st.json(koag.get("testler"))
