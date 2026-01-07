@@ -8,10 +8,10 @@
         "kanal_manyetik": 4,
         "prob_sayisi": 3,
         "kapak_delme": true,
-   "barkod": {
-  "numune": true,
-  "reaktif": true
-},
+        "barkod": {
+          "numune": true,
+          "reaktif": true
+        },
         "inkubasyon_sayisi": 20,
         "sesli_uyari": true,
         "gorsel_uyari": true,
@@ -30,11 +30,16 @@
         "kanal_toplam": 2,
         "yarı_otomatik": true,
         "inkubator": true,
+        "barkod": {
+          "numune": false,
+          "reaktif": false
+        },
         "testler": {
           "PT": true,
           "APTT": true,
           "Fibrinojen": false,
-          "D-Dimer": false
+          "D-Dimer": false,
+          "Faktor": false
         }
       }
     }
