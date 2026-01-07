@@ -4,85 +4,88 @@ from docx import Document
 import re
 import json
 
-# =============================
-# Dosyadan metin çıkarma
-# =============================
-def extract_text_from_pdf(uploaded_file) -> str:
-    reader = PdfReader(uploaded_file)
-    parts = []
+# ======================================================
+# METİN ÇIKARMA
+# ======================================================
+def extract_text_from_pdf(file):
+    reader = PdfReader(file)
+    pages = []
     for page in reader.pages:
-        parts.append(page.extract_text() or "")
-    return "\n".join(parts)
+        pages.append(page.extract_text() or "")
+    return "\n".join(pages)
 
-def extract_text_from_docx(uploaded_file) -> str:
-    doc = Document(uploaded_file)
-    return "\n".join([p.text for p in doc.paragraphs])
+def extract_text_from_docx(file):
+    doc = Document(file)
+    return "\n".join(p.text for p in doc.paragraphs)
 
-# =============================
-# Test listesi bloğunu yakala
-# =============================
-def extract_test_block(t: str) -> str:
+# ======================================================
+# NORMALIZE
+# ======================================================
+def normalize_tr(text):
+    text = text.lower()
+    text = (
+        text.replace("ı", "i")
+        .replace("ş", "s")
+        .replace("ğ", "g")
+        .replace("ü", "u")
+        .replace("ö", "o")
+        .replace("ç", "c")
+    )
+    return re.sub(r"\s+", " ", text)
+
+# ======================================================
+# TEST LİSTESİ BLOĞU
+# ======================================================
+def extract_test_block(text):
     headers = [
-        "istenen test", "istenilen test", "calisilacak test",
-        "calisilacak tetkik", "test listesi", "testler",
-        "koagulasyon test", "calisilacak parametre"
+        "istenen test",
+        "calisilacak test",
+        "test listesi",
+        "testler",
+        "calisilacak parametre"
     ]
     for h in headers:
-        idx = t.find(h)
+        idx = text.find(h)
         if idx != -1:
-            return t[idx: idx + 1200]
+            return text[idx:idx + 1200]
     return ""
 
-# =============================
-# Metin normalize
-# =============================
-def normalize_tr(text: str) -> str:
-    text = text.lower()
-    text = (text.replace("ı", "i")
-            .replace("ş", "s")
-            .replace("ğ", "g")
-            .replace("ü", "u")
-            .replace("ö", "o")
-            .replace("ç", "c"))
-    text = re.sub(r"\s+", " ", text)
-    return text
-
-# =============================
-# Kural çıkarma
-# =============================
-def extract_rules_from_text(raw_text: str) -> dict:
-    t = normalize_tr(raw_text)
+# ======================================================
+# ŞARTNAME KURAL ÇIKARICI (V1)
+# ======================================================
+def extract_rules(text):
+    t = normalize_tr(text)
     rules = {}
 
     # Kanal
     kanal = re.findall(r"en az\s*(\d+)\s*kanal", t)
     if kanal:
-        rules["kanal_toplam_min"] = max(map(int, kanal))
+        rules["kanal_min"] = max(map(int, kanal))
 
     # Prob
     prob = re.findall(r"en az\s*(\d+)\s*prob", t)
     if prob:
-        rules["prob_sayisi_min"] = max(map(int, prob))
+        rules["prob_min"] = max(map(int, prob))
 
     # Barkod
     if "barkod" in t:
-        rules["barkod_okuma"] = True
+        rules["barkod"] = True
 
     # Okuma yöntemi
-    method = set()
+    methods = []
     if "manyetik" in t:
-        method.add("manyetik")
-    if any(k in t for k in ["mekanik", "clot", "clot detection", "pihti"]):
-        method.add("mekanik_clot")
-    if method:
-        rules["okuma_yontemi"] = list(method)
+        methods.append("manyetik")
+    if any(k in t for k in ["mekanik", "clot", "pıhtı"]):
+        methods.append("mekanik_clot")
+    if methods:
+        rules["okuma_yontemi"] = methods
 
     # Test listesi
-    test_block = extract_test_block(t)
-    scan = test_block if test_block else t
+    block = extract_test_block(t)
+    scan = block if block else t
 
     tests = {}
-    if "pt" in scan:
+    if "pt" in scan or "protrombin" in scan:
         tests["PT"] = True
     if "aptt" in scan:
         tests["APTT"] = True
@@ -91,95 +94,104 @@ def extract_rules_from_text(raw_text: str) -> dict:
     if "d-dimer" in scan or "ddimer" in scan:
         tests["D-Dimer"] = True
 
-    if any(k in scan for k in ["faktor", "factor", "faktör"]):
+    if any(k in scan for k in ["faktor", "factor"]):
         tests["Faktör"] = True
-        rules["faktor_testi"] = (
-            "opsiyonel_dis_lab"
-            if any(k in scan for k in ["dis lab", "referans lab", "hizmet alimi"])
-            else "zorunlu"
-        )
+        if any(k in scan for k in ["dis lab", "referans lab", "gonderilebilir"]):
+            rules["faktor_durumu"] = "opsiyonel"
+        else:
+            rules["faktor_durumu"] = "zorunlu"
 
     if tests:
         rules["istenen_testler"] = tests
 
     return rules
 
-# =============================
+# ======================================================
 # STREAMLIT UI
-# =============================
-st.set_page_config("İhaleBind", "🧬", layout="wide")
+# ======================================================
+st.set_page_config(
+    page_title="İhaleBind",
+    page_icon="🧬",
+    layout="wide"
+)
 
+# ------------------------------------------------------
+# CİHAZ KATALOĞU
+# ------------------------------------------------------
 with open("devices.json", "r", encoding="utf-8") as f:
     devices = json.load(f)
 
-st.title("🧬 İhaleBind")
-st.caption("Şartnameyi okusun, kararı siz verin")
+# ------------------------------------------------------
+# HEADER
+# ------------------------------------------------------
+st.markdown("""
+# 🧬 İhaleBind
+### Şartnameyi okusun, kararı siz verin
+""")
 
-    st.divider()
+st.divider()
 
-    st.markdown("### 📂 İhale Türleri")
-
-    ihale_listesi = [
-        "Koagülasyon",
-        "Biyokimya",
-        "Hormon",
-        "Kan Gazı",
-        "İdrar",
-        "Hemogram"
-    ]
-
-    for ihale in ihale_listesi:
-        destek = ihale in device.get("ihale_turleri", [])
-        if destek:
-            st.success(f"✅ {ihale} İhalesi")
-        else:
-            st.error(f"❌ {ihale} İhalesi")
-
+# ------------------------------------------------------
+# MARKA / MODEL
+# ------------------------------------------------------
 col1, col2 = st.columns(2)
+
 with col1:
-    marka = st.selectbox("Cihaz Markası", devices.keys())
+    marka = st.selectbox("Cihaz Markası", list(devices.keys()))
+
 with col2:
-    model = st.selectbox("Cihaz Modeli", devices[marka].keys())
+    model = st.selectbox("Cihaz Modeli", list(devices[marka].keys()))
 
-device = devices[marka][model]
-# ===== SOL MENÜ =====
+selected_device = devices[marka][model]
+
+st.info(f"Seçilen Cihaz: **{marka} {model}**")
+
+# ------------------------------------------------------
+# SIDEBAR
+# ------------------------------------------------------
 with st.sidebar:
-    st.header("🧭 Cihaz & İhale Menüsü")
+    st.header("📂 İhale Türleri")
 
-    st.markdown("### 📦 Seçili Cihaz")
-    st.write(f"**Marka:** {marka}")
-    st.write(f"**Model:** {model}")
-
-    st.divider()
-
-    st.markdown("### 📂 İhale Türleri")
-
-    ihale_listesi = [
+    for ihale in [
         "Koagülasyon",
         "Biyokimya",
         "Hormon",
         "Kan Gazı",
         "İdrar",
         "Hemogram"
-    ]
-
-    for ihale in ihale_listesi:
-        destek = ihale in selected_device.get("ihale_turleri", [])
-        if destek:
-            st.success(f"✅ {ihale} İhalesi")
+    ]:
+        if ihale in selected_device["ihale_turleri"]:
+            st.success(f"{ihale} İhalesi")
         else:
-            st.error(f"❌ {ihale} İhalesi")
+            st.error(f"{ihale} İhalesi")
 
-st.info(f"Seçilen cihaz: **{marka} {model}**")
+# ------------------------------------------------------
+# DOSYA YÜKLEME
+# ------------------------------------------------------
+st.subheader("📄 Teknik Şartname")
 
-file = st.file_uploader("PDF veya Word yükleyin", ["pdf", "docx"])
+file = st.file_uploader("PDF veya Word yükleyin", type=["pdf", "docx"])
 
 if file:
-    text = extract_text_from_pdf(file) if file.name.endswith("pdf") else extract_text_from_docx(file)
+    if file.name.endswith(".pdf"):
+        text = extract_text_from_pdf(file)
+    else:
+        text = extract_text_from_docx(file)
 
     if not text.strip():
         st.error("Metin çıkarılamadı (OCR gerekebilir)")
     else:
-        rules = extract_rules_from_text(text)
+        st.success("Metin başarıyla çıkarıldı")
+
+        rules = extract_rules(text)
+
         st.subheader("🧠 Şartnameden Yakalanan Kurallar")
         st.json(rules)
+
+        st.subheader("🔍 Cihaz Özeti")
+        koag = selected_device.get("koagulasyon", {})
+        st.write("Toplam Kanal:", koag.get("kanal_toplam"))
+        st.write("Prob Sayısı:", koag.get("prob_sayisi"))
+        st.write("Barkod:", "Var" if koag.get("barkod") else "Yok")
+        st.subheader("🧪 Çalışılabilen Testler")
+        st.json(koag.get("testler", {}))
