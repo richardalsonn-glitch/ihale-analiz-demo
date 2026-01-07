@@ -68,8 +68,32 @@ def extract_rules(text):
         rules["prob_min"] = max(map(int, prob))
 
     # Barkod
-    if "barkod" in t:
-        rules["barkod"] = True
+   # --- Barkod detaylı yakalama
+barkod = {}
+
+if any(k in t for k in ["numune barkod", "sample barcode", "hasta barkod", "tup barkod"]):
+    barkod["numune"] = True
+
+if any(k in t for k in ["reaktif barkod", "kit barkod", "reagent barcode"]):
+    barkod["reaktif"] = True
+
+if barkod:
+    rules["barkod"] = barkod
+    
+def evaluate_barkod(requirement: dict, device: dict):
+    device_barkod = device.get("barkod", {})
+    result = {"durum": "Uygun", "aciklama": ""}
+
+    if requirement.get("numune"):
+        if not device_barkod.get("numune"):
+            return {"durum": "Uygun Değil", "aciklama": "Numune barkod okuyucu yok"}
+
+    if requirement.get("reaktif"):
+        if not device_barkod.get("reaktif"):
+            return {"durum": "Zeyil", "aciklama": "Reaktif barkod opsiyonel/zeyil"}
+
+    return result
+
 
     # Okuma yöntemi
     methods = []
