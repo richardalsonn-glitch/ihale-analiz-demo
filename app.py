@@ -68,6 +68,8 @@ def extract_rules(text):
         rules["prob_min"] = max(map(int, prob))
 
     # Barkod
+ if "barkod" in t:
+        rules["barkod"] = True
    # --- Barkod detaylı yakalama
 barkod = {}
 
