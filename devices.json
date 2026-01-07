@@ -8,10 +8,10 @@
         "kanal_manyetik": 4,
         "prob_sayisi": 3,
         "kapak_delme": true,
-          "barkod": {
-      "numune": true,
-      "reaktif": true
-    },
+   "barkod": {
+  "numune": true,
+  "reaktif": true
+},
         "inkubasyon_sayisi": 20,
         "sesli_uyari": true,
         "gorsel_uyari": true,
