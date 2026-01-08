@@ -5,6 +5,17 @@ from typing import Dict, Any, List, Tuple
 
 import streamlit as st
 import pandas as pd
+# ======================================================
+# DESTEKLENEN İHALE TÜRLERİ
+# ======================================================
+ALL_IHALELER = [
+    "Koagülasyon",
+    "Biyokimya",
+    "Hormon",
+    "Kan Gazı",
+    "İdrar",
+    "Hemogram"
+]
 
 from pypdf import PdfReader
 from docx import Document
