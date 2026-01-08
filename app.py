@@ -635,12 +635,3 @@ with tabS:
     else:
         st.info("6.D Sarf bölümü bulunamadı.")
 
-with tabR:
-    st.subheader("PDF Uygunluk Raporu")
-    # rapor için A grubu varsa onu kullan, yoksa B
-    use_df = dfA if len(items_A) else dfB
-    use_z = zA if len(items_A) else zB
-    use_overall = overallA if len(items_A) else overallB
-    report_title = st.text_input("Rapor Adı", value=f"{brand} {model} - Uygunluk Raporu ({ihale})")
-    pdf = pdf_report(report_title, f"{brand} {model}", use_overall, use_df, use_z)
-    st.download_button("📥 PDF Raporu İndir", data=pdf, file_name="ihalebind_rapor.pdf", mime="application/pdf")
