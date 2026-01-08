@@ -3,14 +3,27 @@
     "SF-8300": {
       "ihale_turleri": ["Koagülasyon"],
       "koagulasyon": {
-        "kanal": 8,
-        "prob": 3,
+        "otomasyon": "tam",
+        "kanal_toplam": 8,
+        "kanal_optik": 4,
+        "kanal_manyetik": 4,
+        "prob_sayisi": 3,
         "kapak_delme": true,
         "barkod": {
           "numune": true,
-          "reaktif": true
+          "reaktif": true,
+          "dahili": true
         },
-        "okuma": ["manyetik", "optik"],
+        "hiz_test_saat": 80,
+        "inkubasyon_37c": true,
+        "reaktif_sogutucu": true,
+        "inkubasyon_hazne_sayisi": 2,
+        "qc_program": true,
+        "lis_cift_yon": true,
+        "sonuc_hafiza": true,
+        "seviye_sensor": true,
+        "sesli_uyari": true,
+        "gorsel_uyari": true,
         "testler": {
           "PT": "manyetik",
           "APTT": "manyetik",
@@ -20,17 +33,28 @@
         }
       }
     },
-
     "SF-400": {
       "ihale_turleri": ["Koagülasyon"],
       "koagulasyon": {
-        "kanal": 2,
-        "yarı_otomatik": true,
-        "inkubator": true,
+        "otomasyon": "yari",
+        "kanal_toplam": 2,
+        "prob_sayisi": 0,
+        "kapak_delme": false,
         "barkod": {
           "numune": false,
-          "reaktif": false
+          "reaktif": false,
+          "dahili": false
         },
+        "hiz_test_saat": 0,
+        "inkubasyon_37c": true,
+        "reaktif_sogutucu": false,
+        "inkubasyon_hazne_sayisi": 1,
+        "qc_program": false,
+        "lis_cift_yon": false,
+        "sonuc_hafiza": false,
+        "seviye_sensor": false,
+        "sesli_uyari": false,
+        "gorsel_uyari": true,
         "testler": {
           "PT": true,
           "APTT": true,
