@@ -466,6 +466,11 @@ with open("devices.json", "r", encoding="utf-8") as f:
 st.title("🧬 İhaleBind")
 st.caption("Şartnameyi okusun, kararı siz verin")
 
+# Sidebar: ihale seçimi
+with st.sidebar:
+    st.header("📂 İhale Türleri")
+    ihale = st.radio("İhale", ALL_IHALELER, index=0)
+
 # Cihaz filtreleme
 filtered_brands = {}
 for brand, models in DEV.items():
