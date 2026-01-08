@@ -3,18 +3,14 @@
     "SF-8300": {
       "ihale_turleri": ["Koagülasyon"],
       "koagulasyon": {
-        "kanal_toplam": 8,
-        "kanal_optik": 4,
-        "kanal_manyetik": 4,
-        "prob_sayisi": 3,
+        "kanal": 8,
+        "prob": 3,
         "kapak_delme": true,
         "barkod": {
           "numune": true,
           "reaktif": true
         },
-        "inkubasyon_sayisi": 20,
-        "sesli_uyari": true,
-        "gorsel_uyari": true,
+        "okuma": ["manyetik", "optik"],
         "testler": {
           "PT": "manyetik",
           "APTT": "manyetik",
@@ -23,6 +19,8 @@
           "Faktor": false
         }
       }
+    }
+  }
     },
     "SF-400": {
       "ihale_turleri": ["Koagülasyon"],
