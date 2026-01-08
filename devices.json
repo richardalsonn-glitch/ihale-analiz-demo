@@ -19,13 +19,12 @@
           "Faktor": false
         }
       }
-    }
-  }
     },
+
     "SF-400": {
       "ihale_turleri": ["Koagülasyon"],
       "koagulasyon": {
-        "kanal_toplam": 2,
+        "kanal": 2,
         "yarı_otomatik": true,
         "inkubator": true,
         "barkod": {
@@ -38,4 +37,8 @@
           "Fibrinojen": false,
           "D-Dimer": false,
           "Faktor": false
-        },
+        }
+      }
+    }
+  }
+}
